@@ -1,18 +1,27 @@
 # TODO:
-#     Film roll lettering
 #     Image previews
 #     File renaming from treeview selection
 #     Polish UI
-#     Folder selection
-#     Treeview population
 #     Auto dating from metadata
 #     Auto numbering from selection
 #     Refresh treeview button
   
 import tkinter as tk
 import tkinter.ttk as ttk
-import tkinter.filedialog as fd
+import tkinter.filedialog as filedialog
 from PIL import Image, ImageTk
+from os import listdir
+from os.path import isfile, join, getmtime 
+from datetime import datetime
+
+FILENAME_VALID = "Valid"
+FILENAME_INVALID_YEAR = "Invalid year!"
+FILENAME_NO_MONTH = "Select a month!"
+FILENAME_INVALID_DAY = "Invalid day!"
+FILENAME_INVALID_ROLL_LETTER = "Invalid roll letter!"
+FILENAME_INVALID_NUMBER = "Invalid sequence number!"
+FILENAME_INVALID_APPENDIX = "Invalid appendix!"
+DIVIDER = "_"
 
 class PhotographRenamer:
     def __init__(self, master=None):
@@ -21,230 +30,303 @@ class PhotographRenamer:
         frame = ttk.Frame(window)
 
         # Choose folder -----------------------------------------------------------------------------------------------------------------------------
-        choose_folder = ttk.LabelFrame(frame, text="Choose folder")
+        chooseFolderFrame = ttk.LabelFrame(frame, text="Choose folder")
 
-        self.folder = ttk.Entry(choose_folder, textvariable="")
-        self.folder.pack(expand=True, fill='x', side='left')
-
-        choose_folder_button = ttk.Button(choose_folder, text="Choose folder") # TODO add functionality
-        choose_folder_button.pack(side='left')
+        self.folder = tk.StringVar()
+        folderEntry = ttk.Entry(chooseFolderFrame, textvariable=self.folder)
+        folderEntry.pack(expand=True, fill='x', side='left')
+        chooseFolderButton = ttk.Button(chooseFolderFrame, text="Choose folder", command=self.load_folder) # TODO add functionality
+        chooseFolderButton.pack(side='left')
         
-        choose_folder.pack(fill='x', side='top')
+        chooseFolderFrame.pack(fill='x', side='top')
 
         # Select files --------------------------------------------------------------------------------------------------------------------------
-        select_files = ttk.LabelFrame(frame, text="Select files")
+        selectFilesFrame = ttk.LabelFrame(frame, text="Select files")
 
-        file_list_frame = ttk.Frame(select_files)
-        self.file_list = ttk.Treeview(file_list_frame, columns=('filename', 'date_created'))
-        self.file_list.config(selectmode='extended')
-        self.file_list['show'] = 'headings'
-        self.file_list.heading("filename", text="File name", anchor='w')
-        self.file_list.heading("date_created", text="Date created", anchor='w')
-        self.file_list.pack(expand=True, fill='x', side='left')
+        fileListFrame = ttk.Frame(selectFilesFrame)
 
-        file_list_scrollbar = ttk.Scrollbar(file_list_frame, orient="vertical")
-        file_list_scrollbar.configure(command = self.file_list.yview)
-        self.file_list.config(yscrollcommand=file_list_scrollbar.set)
-        file_list_scrollbar.pack(side='left', fill='both')
+        self.fileList = ttk.Treeview(fileListFrame, columns=('filename', 'date_created'))
+        self.fileList.config(selectmode='extended')
+        self.fileList['show'] = 'headings'
+        self.fileList.heading("filename", text="File name", anchor='w')
+        self.fileList.heading("date_created", text="Date created", anchor='w')
+        self.fileList.bind('<<TreeviewSelect>>', self.updateThumbnail)
+        self.fileList.pack(expand=True, fill='x', side='left')
 
-        file_list_control_frame = ttk.Frame(select_files)
-        select_all_button = ttk.Button(file_list_control_frame, text="Select all") # TODO add functionality
-        select_all_button.pack(side='left')
+        fileListScrollbar = ttk.Scrollbar(fileListFrame, orient="vertical")
+        fileListScrollbar.configure(command = self.fileList.yview)
+        self.fileList.config(yscrollcommand=fileListScrollbar.set)
+        fileListScrollbar.pack(side='left', fill='both')
 
-        refresh_file_list = ttk.Button(file_list_control_frame, text="Refresh folder") # TODO add functionality
-        refresh_file_list.pack(side='left')
+        fileListFrame.pack(side='top', fill='x')
 
-        file_list_frame.pack(side='top', fill='x')
-        file_list_control_frame.pack(side='top', fill='x')
-        select_files.pack(fill='x', side='top')
+        fileListControlFrame = ttk.Frame(selectFilesFrame)
+
+        selectAllButton = ttk.Button(fileListControlFrame, text="Select all") # TODO add functionality
+        selectAllButton.pack(side='left')
+        refreshFileListButton = ttk.Button(fileListControlFrame, text="Refresh folder") # TODO add functionality
+        refreshFileListButton.pack(side='left')
+
+        fileListControlFrame.pack(side='top', fill='x')
+
+        selectFilesFrame.pack(fill='x', side='top')
 
         # Filename construction ---------------------------------------------------------------------------------------
-        construct_filename = ttk.LabelFrame(frame, text="Construct filename")
+        constructFilenameFrame = ttk.LabelFrame(frame, text="Construct filename")
 
         # Construction options
-        filename_options = ttk.Frame(construct_filename)
+        filenameOptionsFrame = ttk.Frame(constructFilenameFrame)
 
         # Auto date option
-        self.auto_dating = tk.BooleanVar()
-        self.auto_dating.set(False)
-        auto_date_checkbox = ttk.Checkbutton(filename_options)
-        auto_date_checkbox.configure(text="Grab date from metadata", variable=self.auto_dating, command=self.toggle_date_entry)
-        auto_date_checkbox.pack(side='left', padx=5)
-
-        # Auto sequence number option
-        self.auto_numbering = tk.BooleanVar()
-        self.auto_numbering.set(False)
-        auto_number_checkbox = ttk.Checkbutton(filename_options)
-        auto_number_checkbox.configure(text="Add number automatically", variable=self.auto_numbering, command=self.toggle_number_entry)
-        auto_number_checkbox.pack(side='left', padx=5)
+        self.autoDating = tk.BooleanVar()
+        self.autoDating.set(False)
+        autoDatingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
+        autoDatingCheckbox.configure(text="Grab date from metadata", variable=self.autoDating, command=self.toggleAutoDate)
+        autoDatingCheckbox.pack(side='left', padx=5)
 
         # Roll letter option
-        self.roll_film= tk.BooleanVar()
-        self.roll_film.set(False)
-        roll_film_checkbox = ttk.Checkbutton(filename_options)
-        roll_film_checkbox.configure(text="Roll film", variable=self.roll_film, command=self.toggle_roll_film)
-        roll_film_checkbox.pack(side='left', padx=5)
+        self.rollFilm= tk.BooleanVar()
+        self.rollFilm.set(False)
+        rollFilmCheckbox = ttk.Checkbutton(filenameOptionsFrame)
+        rollFilmCheckbox.configure(text="Roll film", variable=self.rollFilm, command=self.togglRollFilm)
+        rollFilmCheckbox.pack(side='left', padx=5)
 
-        filename_options.pack(fill='x', side='top')
+        self.appendixing = tk.BooleanVar()
+        self.appendixing.set(False)
+        appendixingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
+        appendixingCheckbox.configure(text="Add appendix", variable=self.appendixing, command=self.toggleAppendix)
+        appendixingCheckbox.pack(side='left', padx=5)
 
-        # Data entry
-        filename_entries = ttk.Frame(construct_filename)
+        filenameOptionsFrame.pack(fill='x', side='top')
 
-        # Manual date entry
-        self.manual_date_frame = ttk.Frame(filename_entries)
+        # Data entry --------------------------------------------------------------------------------------------------------------------------------
+        filenameEntriesFrame = ttk.Frame(constructFilenameFrame)
 
-        year_label = ttk.Label(self.manual_date_frame, text="  Year: ")
-        year_label.pack(side='left')
-        self.year = ttk.Entry(self.manual_date_frame, textvariable="", width=5)
-        self.year.pack(side='left')
+        self.dateEntryFrame = ttk.Frame(filenameEntriesFrame)
 
-        month_label = ttk.Label(self.manual_date_frame, text="  Month: ")
+        # Year
+        self.year = tk.StringVar()
+        yearEntryLabel = ttk.Label(self.dateEntryFrame, text="  Year: ")
+        yearEntryLabel.pack(side='left')
+        yearEntry = ttk.Entry(self.dateEntryFrame, textvariable=self.year, width=5)
+        yearEntry.pack(side='left')
+
+        # Month
+        month_label = ttk.Label(self.dateEntryFrame, text="  Month: ")
         month_label.pack(side='left')
-        self.month = ttk.Combobox(self.manual_date_frame, state='readonly', width=10,
+        self.month = ttk.Combobox(self.dateEntryFrame, state='readonly', width=10,
             values=["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
         self.month.pack(side='left')
 
-        day_label = ttk.Label(self.manual_date_frame, text="  Day: ")
-        day_label.pack(side='left')
-        self.day = ttk.Entry(self.manual_date_frame, textvariable="", width=3)
-        self.day.pack(side='left')
+        # Day 
+        self.day = tk.StringVar()
+        dayEntryLabel = ttk.Label(self.dateEntryFrame, text="  Day: ")
+        dayEntryLabel.pack(side='left')
+        self.dayEntry = ttk.Entry(self.dateEntryFrame, textvariable="", width=3)
+        self.dayEntry.pack(side='left')
 
-        self.manual_date_frame.pack(fill='x', side='left')
+        self.dateEntryFrame.pack(fill='x', side='left')
 
-        # Roll letter entry
-        self.roll_letter_frame = ttk.Frame(filename_entries)
+        # Roll letter
+        self.rollLetterEntryFrame = ttk.Frame(filenameEntriesFrame)
 
-        roll_letter_label = ttk.Label(self.roll_letter_frame, text="  Roll letter: ")
-        roll_letter_label.pack(side='left')
-        self.roll_letter = ttk.Entry(self.roll_letter_frame, textvariable="", width=3)
-        self.roll_letter.pack(side='left')
-        self.roll_letter_empty = ttk.Label(self.roll_letter_frame, text="")
+        self.rollLetter = tk.StringVar()
+        rollLetterEntryLabel = ttk.Label(self.rollLetterEntryFrame, text="Roll letter: ")
+        rollLetterEntryLabel.pack(side='left')
+        self.rollLetterEntry = ttk.Entry(self.rollLetterEntryFrame, textvariable="", width=3)
+        self.rollLetterEntry.pack(side='left')
+        self.rollLetterEmpty = ttk.Label(self.rollLetterEntryFrame, text="")
 
-        self.roll_letter_frame.pack(fill='x', side='left')
+        self.rollLetterEntryFrame.pack(fill='x', side='left')
 
-        # Manual number entry
-        self.manual_number_frame = ttk.Frame(filename_entries)
+        # Start number 
+        self.startNumberEntryFrame = ttk.Frame(filenameEntriesFrame)
 
-        number_label = ttk.Label(self.manual_number_frame, text="  Number: ")
-        number_label.pack(side='left')
-        self.sequence_number = ttk.Entry(self.manual_number_frame, textvariable="", width=4)
-        self.sequence_number.pack(side='left')
-        self.manual_number_frame.pack(fill='x', side='left')
+        self.startNumber = tk.StringVar()
+        self.startNumberEntryLabel = ttk.Label(self.startNumberEntryFrame, text="Start number: ")
+        self.startNumberEntryLabel.pack(side='left')
+        startNumberEntry = ttk.Entry(self.startNumberEntryFrame, textvariable=self.startNumber, width=4)
+        startNumberEntry.pack(side='left')
 
-        filename_entries.pack(fill='x', side='top')
+        self.startNumberEntryFrame.pack(fill='x', side='left')
 
-        construct_filename.pack(fill='x', side='top')
+        # Appendix entry
+        self.appendixEntryFrame = ttk.Frame(filenameEntriesFrame)
+
+        self.appendix = tk.StringVar()
+        appendixEntryLabel = ttk.Label(self.appendixEntryFrame, text="Appendix:")
+        appendixEntryLabel.pack(side='left')
+        self.appendixEntry = ttk.Entry(self.appendixEntryFrame, textvariable="" , width=10)
+        self.appendixEntry.pack(side='left')
+
+        self.appendixEntryFrame.pack(fill='x', side='left')
+
+        filenameEntriesFrame.pack(fill='x', side='top')
+        constructFilenameFrame.pack(fill='x', side='top')
 
         # Image preview
-        image_preview = ttk.LabelFrame(frame, text="Image preview")
+        thumbnailFrame = ttk.LabelFrame(frame, text="Image preview")
 
-        # TODO temporary cat pic
-        self.image = Image.open("cat.jpeg")
-        self.image.thumbnail((400,400))
-        self.image = ImageTk.PhotoImage(self.image)
-        image_container = ttk.Label(image_preview, image=self.image)
-        image_container.pack(fill="both", side='top')
+        # TODO temporary cat pic, replace with a startup image
+        self.thumbnailImage = Image.open("test_images/cat.jpeg")
+        self.thumbnailImage.thumbnail((400,400), Image.Resampling.LANCZOS)
+        self.thumbnailImage = ImageTk.PhotoImage(self.thumbnailImage)
+        self.thumbnail = ttk.Label(thumbnailFrame, image=self.thumbnailImage)
+        self.thumbnail.pack(fill="both", side='top')
 
-        image_preview.pack(fill='y', side='left')
+        thumbnailFrame.pack(fill='both', side='left')
 
         # Current filename and rename button
-        self.current_filename_label = ttk.Label(frame, textvariable="")
-        self.update_filename_label()
+        self.currentFilename = tk.StringVar()
+        self.currentFilenameLabel = ttk.Label(frame, textvariable="")
+        self.updateCurrentFilename()
 
         rename_button = ttk.Button(frame, text="Rename file(s)", command=self.rename_files)
         rename_button.pack(side='bottom')
-        self.current_filename_label.pack(side='bottom', pady=5)
+        self.currentFilenameLabel.pack(side='bottom', pady=5)
 
-        self.toggle_date_entry()
-        self.toggle_number_entry()
-        self.toggle_roll_film()
+        self.toggleAutoDate()
+        self.togglRollFilm()
+        self.toggleAppendix()
 
-        frame.config(width="500", height="600")
+        frame.config(width="500")
         frame.pack(expand=True, fill='both', side='top', padx=5, pady=5)
-        window.geometry('500x800')
         window.resizable(False, False)
         window.title("Photograph Renamer")
         self.window = window
 
+    # TODO filter out non-image files
+    def load_folder(self):
+        for file in self.fileList.get_children():
+            self.fileList.delete(file)
+
+        self.folder.set(filedialog.askdirectory())
+
+        onlyfiles = [f for f in listdir(self.folder.get()) if isfile(join(self.folder.get(), f))]
+        for file in onlyfiles:
+            creation_date = datetime.fromtimestamp(getmtime(self.folder.get() + "/" + file))
+            self.fileList.insert("", 'end', text=file, values=(file, creation_date))
+
+    # TODO rework for funky TIFFs and raws
+    def updateThumbnail(self, event):
+        selected_files = self.fileList.selection()
+        if selected_files:
+            image_path = self.fileList.item(selected_files[0])['values'][0]
+            self.thumbnailImage = Image.open(self.folder.get() + "/" + image_path)
+            self.thumbnailImage.thumbnail((400,400), Image.LANCZOS)
+            self.thumbnailImage = ImageTk.PhotoImage(self.thumbnailImage)
+            self.thumbnail.configure(image=self.thumbnailImage)
+
     # Enable of disable the UI for manual date entry based on the corresponding checkbox
-    def toggle_date_entry(self):
-        if self.auto_dating.get():
-            for child in self.manual_date_frame.winfo_children():
+    def toggleAutoDate(self):
+        if self.autoDating.get():
+            for child in self.dateEntryFrame.winfo_children():
                 child.configure(state='disable')
         else:
-            for child in self.manual_date_frame.winfo_children():
+            for child in self.dateEntryFrame.winfo_children():
                 child.configure(state='enable')
 
     # Enable or disable the UI for film roll letters
-    def toggle_roll_film(self):
-        if self.roll_film.get():
-            for child in self.roll_letter_frame.winfo_children():
+    def togglRollFilm(self):
+        if self.rollFilm.get():
+            for child in self.rollLetterEntryFrame.winfo_children():
                 child.pack(side='left')
-            self.roll_letter_empty.pack_forget()
+            self.rollLetterEmpty.pack_forget()
         else:
-            for child in self.roll_letter_frame.winfo_children():
+            for child in self.rollLetterEntryFrame.winfo_children():
                 child.pack_forget()
-            self.roll_letter_empty.pack(side='left')
+            self.rollLetterEmpty.pack(side='left')
 
-    # Enable or disable the UI for manual sequence number entry based on the corresponding checkbox
-    def toggle_number_entry(self):
-        if self.auto_numbering.get():
-            for child in self.manual_number_frame.winfo_children():
-                child.configure(state='disable')
+    # Enable or disable the UI for appendices
+    def toggleAppendix(self):
+        if self.appendixing.get():
+            for child in self.appendixEntryFrame.winfo_children():
+                child.pack(side='left')
         else:
-            for child in self.manual_number_frame.winfo_children():
-                child.configure(state='enable')
+            for child in self.appendixEntryFrame.winfo_children():
+                child.pack_forget()
+
+    def get_filename(self, sequence_counter):
+        filename = ""
+        filenameState = self.checkFilenameEntries()
+        if filenameState == FILENAME_VALID:
+            # Add date
+            if not self.autoDating.get():
+                filename += self.getFileYear() + self.getFileMonth() + self.getFileDay()
+            else:
+                filename += "YYMMDD" # TODO auto dating
+
+            # Add dividier
+            filename += DIVIDER
+
+            # Add roll letter and two digit number if roll film
+            numberPadding = 3
+            if self.rollFilm.get():
+                filename += self.getRollLetter()
+                numberPadding = 2
+
+            # Add sequence number
+            filename += str(int(self.startNumber.get()) + sequence_counter).zfill(numberPadding)
+
+            # Add appendix if its enabled
+            if self.appendixing.get():
+                filename += "_" + self.appendix.get()
+
+            # TODO Add file extension
+
+        else: 
+            filename += filenameState
+        
+        return filename
 
     # TODO: Chomping and leading 0's
-    # TODO: Seperate parts into functions so a rename file function can use them later
-    def update_filename_label(self):
-        filename = ""
+    def updateCurrentFilename(self):
+        filename = self.get_filename(0)
+        self.currentFilenameLabel.configure(text=filename)
+        self.currentFilenameLabel.after(5, self.updateCurrentFilename)
 
-        if not self.auto_dating.get():
-            if self.year.get().isnumeric(): # TODO do a better check than this so your aren't in the future
-                filename += self.year.get().zfill(2)[-2:]
-            else:
-                filename += "??"
-            
-            if self.month.current() != -1:
-                filename += str(self.month.current() + 1).zfill(2)
-            else:
-                filename += "??"
-            
-            if self.day.get().isnumeric(): # TODO do a better check than this so it matches the acutal month
-                filename += self.day.get().zfill(2)
-            else:
-                filename += "??"
-        else:
-            filename += "YYMMDD" # TODO auto date from metadata
-
-        filename += "_"
-
-        if self.roll_film.get():
-            # Add roll letter or error char
-            if self.roll_letter.get().isalpha():
-                filename += self.roll_letter.get().upper()
-            else:
-                filename += "?"
-
-            # Two digit sequence number
-            if not self.auto_numbering.get() and self.sequence_number.get().isnumeric():
-                filename += self.sequence_number.get().zfill(2)
-            else:
-                filename += "##" if self.auto_numbering.get() else "??"
-        else:
-            # Three digit sequence number
-            if not self.auto_numbering.get() and self.sequence_number.get().isnumeric():
-                filename += self.sequence_number.get().zfill(3)
-            else:
-                filename += "###" if self.auto_numbering.get() else "???"
-        
-        self.current_filename_label.configure(text=filename)
-        self.current_filename_label.after(5, self.update_filename_label)
-    
     def rename_files(self):
-        self.update_filename_label()
-        print(self.current_filename_label.cget("text"))
+        self.updateCurrentFilename()
+        print(self.currentFilenameLabel.cget("text"))
+
+    # Check the entered data for its validity, return error message if it's not
+    def checkFilenameEntries(self):
+        error = ""
+        if not self.autoDating.get():
+            if not(self.year.get().isnumeric()): # TODO do a better check than this so your aren't in the future
+                error += FILENAME_INVALID_YEAR + "\n"
+            
+            if self.month.current() == -1:
+                error += FILENAME_NO_MONTH + "\n"
+            
+            if not(self.day.get().isnumeric()): # TODO do a better check so the day actually exists
+                error += FILENAME_INVALID_DAY + "\n"
+            
+        if self.rollFilm.get() and not(self.rollLetter.get().isalpha()):
+            error += FILENAME_INVALID_ROLL_LETTER + "\n"
+        
+        if not(self.startNumber.get().isnumeric()):
+            error += FILENAME_INVALID_NUMBER + "\n"
+        
+        if self.appendixing.get() and not(self.appendix.get().isalpha()):
+            error += FILENAME_INVALID_APPENDIX + "\n"
+
+        if error != "":
+            return error
+        else: 
+            return FILENAME_VALID
+
+    def getFileYear(self):
+        return self.year.get().zfill(2)[-2:]
+
+    def getFileMonth(self):
+        return str(self.month.current() + 1).zfill(2)
+
+    def getFileDay(self):
+        return self.day.get().zfill(2)
+    
+    def getRollLetter(self):
+        return self.rollLetter.get().upper()
 
     def run(self):
         self.window.mainloop()
