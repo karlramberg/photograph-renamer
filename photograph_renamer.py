@@ -1,17 +1,18 @@
 # TODO:
-#     Image previews
-#     File renaming from treeview selection
-#     Polish UI
-#     Auto dating from metadata
-#     Auto numbering from selection
-#     Refresh treeview button
-  
+#     Thumbnail generation needs polish 
+#     Auto dating
+#     Auto numbering
+#     Replace cat with startup pick
+
+import numpy as np 
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.filedialog as filedialog
+import rawpy
+import math
 from PIL import Image, ImageTk
 from os import listdir
-from os.path import isfile, join, getmtime 
+from os.path import isfile, join, getmtime, splitext 
 from datetime import datetime
 
 FILENAME_VALID = "Valid"
@@ -23,7 +24,14 @@ FILENAME_INVALID_NUMBER = "Invalid sequence number!"
 FILENAME_INVALID_APPENDIX = "Invalid appendix!"
 DIVIDER = "_"
 
+IMAGE_EXTENSTIONS = (".JPG", ".JPEG", ".TIF", ".TIFF", ".DNG", ".RAF", ".NEF", ".PNG")
+RAW_EXTENSIONS = (".RAF", ".NEF")
+TRANSPARENT = (255, 255, 255, 0)
+
+THUMBNAIL_SIZE = 400
+
 class PhotographRenamer:
+    # Set up the UI
     def __init__(self, master=None):
         # Create main window and frame
         window = tk.Tk()
@@ -31,25 +39,24 @@ class PhotographRenamer:
 
         # Choose folder -----------------------------------------------------------------------------------------------------------------------------
         chooseFolderFrame = ttk.LabelFrame(frame, text="Choose folder")
-
         self.folder = tk.StringVar()
         folderEntry = ttk.Entry(chooseFolderFrame, textvariable=self.folder)
         folderEntry.pack(expand=True, fill='x', side='left')
-        chooseFolderButton = ttk.Button(chooseFolderFrame, text="Choose folder", command=self.load_folder) # TODO add functionality
+        chooseFolderButton = ttk.Button(chooseFolderFrame, text="Choose folder", command=self.chooseFolder)
         chooseFolderButton.pack(side='left')
-        
         chooseFolderFrame.pack(fill='x', side='top')
 
         # Select files --------------------------------------------------------------------------------------------------------------------------
         selectFilesFrame = ttk.LabelFrame(frame, text="Select files")
 
+        # Treeview and scrollbar
         fileListFrame = ttk.Frame(selectFilesFrame)
 
-        self.fileList = ttk.Treeview(fileListFrame, columns=('filename', 'date_created'))
+        self.fileList = ttk.Treeview(fileListFrame, columns=('filename', 'dateCreated'))
         self.fileList.config(selectmode='extended')
         self.fileList['show'] = 'headings'
         self.fileList.heading("filename", text="File name", anchor='w')
-        self.fileList.heading("date_created", text="Date created", anchor='w')
+        self.fileList.heading("dateCreated", text="Date created", anchor='w')
         self.fileList.bind('<<TreeviewSelect>>', self.updateThumbnail)
         self.fileList.pack(expand=True, fill='x', side='left')
 
@@ -60,13 +67,12 @@ class PhotographRenamer:
 
         fileListFrame.pack(side='top', fill='x')
 
+        # Select all and refresh controls
         fileListControlFrame = ttk.Frame(selectFilesFrame)
-
-        selectAllButton = ttk.Button(fileListControlFrame, text="Select all") # TODO add functionality
+        selectAllButton = ttk.Button(fileListControlFrame, text="Select all", command=self.selectAllFiles)
         selectAllButton.pack(side='left')
-        refreshFileListButton = ttk.Button(fileListControlFrame, text="Refresh folder") # TODO add functionality
+        refreshFileListButton = ttk.Button(fileListControlFrame, text="Refresh folder", command=self.loadFolder)
         refreshFileListButton.pack(side='left')
-
         fileListControlFrame.pack(side='top', fill='x')
 
         selectFilesFrame.pack(fill='x', side='top')
@@ -79,23 +85,23 @@ class PhotographRenamer:
 
         # Auto date option
         self.autoDating = tk.BooleanVar()
-        self.autoDating.set(False)
+        self.autoDating.set(True)
         autoDatingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
         autoDatingCheckbox.configure(text="Grab date from metadata", variable=self.autoDating, command=self.toggleAutoDate)
-        autoDatingCheckbox.pack(side='left', padx=5)
+        autoDatingCheckbox.pack(side='left')
 
         # Roll letter option
-        self.rollFilm= tk.BooleanVar()
+        self.rollFilm = tk.BooleanVar()
         self.rollFilm.set(False)
         rollFilmCheckbox = ttk.Checkbutton(filenameOptionsFrame)
         rollFilmCheckbox.configure(text="Roll film", variable=self.rollFilm, command=self.togglRollFilm)
-        rollFilmCheckbox.pack(side='left', padx=5)
+        rollFilmCheckbox.pack(side='left')
 
         self.appendixing = tk.BooleanVar()
         self.appendixing.set(False)
         appendixingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
         appendixingCheckbox.configure(text="Add appendix", variable=self.appendixing, command=self.toggleAppendix)
-        appendixingCheckbox.pack(side='left', padx=5)
+        appendixingCheckbox.pack(side='left')
 
         filenameOptionsFrame.pack(fill='x', side='top')
 
@@ -112,8 +118,8 @@ class PhotographRenamer:
         yearEntry.pack(side='left')
 
         # Month
-        month_label = ttk.Label(self.dateEntryFrame, text="  Month: ")
-        month_label.pack(side='left')
+        monthEntryLabel = ttk.Label(self.dateEntryFrame, text="  Month: ")
+        monthEntryLabel.pack(side='left')
         self.month = ttk.Combobox(self.dateEntryFrame, state='readonly', width=10,
             values=["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"])
         self.month.pack(side='left')
@@ -122,8 +128,8 @@ class PhotographRenamer:
         self.day = tk.StringVar()
         dayEntryLabel = ttk.Label(self.dateEntryFrame, text="  Day: ")
         dayEntryLabel.pack(side='left')
-        self.dayEntry = ttk.Entry(self.dateEntryFrame, textvariable="", width=3)
-        self.dayEntry.pack(side='left')
+        dayEntry = ttk.Entry(self.dateEntryFrame, textvariable="", width=3)
+        dayEntry.pack(side='left')
 
         self.dateEntryFrame.pack(fill='x', side='left')
 
@@ -133,8 +139,8 @@ class PhotographRenamer:
         self.rollLetter = tk.StringVar()
         rollLetterEntryLabel = ttk.Label(self.rollLetterEntryFrame, text="Roll letter: ")
         rollLetterEntryLabel.pack(side='left')
-        self.rollLetterEntry = ttk.Entry(self.rollLetterEntryFrame, textvariable="", width=3)
-        self.rollLetterEntry.pack(side='left')
+        rollLetterEntry = ttk.Entry(self.rollLetterEntryFrame, textvariable="", width=3)
+        rollLetterEntry.pack(side='left')
         self.rollLetterEmpty = ttk.Label(self.rollLetterEntryFrame, text="")
 
         self.rollLetterEntryFrame.pack(fill='x', side='left')
@@ -143,6 +149,7 @@ class PhotographRenamer:
         self.startNumberEntryFrame = ttk.Frame(filenameEntriesFrame)
 
         self.startNumber = tk.StringVar()
+        self.startNumber.set("1")
         self.startNumberEntryLabel = ttk.Label(self.startNumberEntryFrame, text="Start number: ")
         self.startNumberEntryLabel.pack(side='left')
         startNumberEntry = ttk.Entry(self.startNumberEntryFrame, textvariable=self.startNumber, width=4)
@@ -165,59 +172,105 @@ class PhotographRenamer:
         constructFilenameFrame.pack(fill='x', side='top')
 
         # Image preview
-        thumbnailFrame = ttk.LabelFrame(frame, text="Image preview")
+        self.thumbnailFrame = ttk.LabelFrame(frame, width=410, height=425, text="Image preview")
 
-        # TODO temporary cat pic, replace with a startup image
-        self.thumbnailImage = Image.open("test_images/cat.jpeg")
-        self.thumbnailImage.thumbnail((400,400), Image.Resampling.LANCZOS)
-        self.thumbnailImage = ImageTk.PhotoImage(self.thumbnailImage)
-        self.thumbnail = ttk.Label(thumbnailFrame, image=self.thumbnailImage)
-        self.thumbnail.pack(fill="both", side='top')
+        self.image = Image.open("../test_images/cat.jpeg")
+        self.thumbnailImage()
+        self.image = ImageTk.PhotoImage(self.image)
+        self.thumbnail = ttk.Label(self.thumbnailFrame, image=self.image)
+        self.thumbnail.pack(fill="x", side='top', anchor='c')
+        self.loadedThumbnailFile = ""
 
-        thumbnailFrame.pack(fill='both', side='left')
+        self.thumbnailFrame.pack(fill='both', side='left')
+        self.thumbnailFrame.pack_propagate(0)
 
         # Current filename and rename button
-        self.currentFilename = tk.StringVar()
-        self.currentFilenameLabel = ttk.Label(frame, textvariable="")
-        self.updateCurrentFilename()
+        self.previewFilename = tk.StringVar()
+        self.previewFilenameLabel = ttk.Label(frame, textvariable=self.previewFilename)
+        self.updatePreviewFilename()
 
-        rename_button = ttk.Button(frame, text="Rename file(s)", command=self.rename_files)
-        rename_button.pack(side='bottom')
-        self.currentFilenameLabel.pack(side='bottom', pady=5)
+        renameButton = ttk.Button(frame, text="Rename file(s)", command=self.renameFiles)
+        renameButton.pack(side='bottom')
+        self.previewFilenameLabel.pack(side='bottom')
 
         self.toggleAutoDate()
         self.togglRollFilm()
         self.toggleAppendix()
 
-        frame.config(width="500")
-        frame.pack(expand=True, fill='both', side='top', padx=5, pady=5)
+        frame.pack(expand=True, fill='both', side='top')
         window.resizable(False, False)
         window.title("Photograph Renamer")
         self.window = window
 
-    # TODO filter out non-image files
-    def load_folder(self):
+    # Ask the user for a folder and load it
+    def chooseFolder(self):
+        self.folder.set(filedialog.askdirectory())
+        self.loadFolder()
+
+    # Load the folder currently in the entry box 
+    def loadFolder(self):
+        # Clear the old file list
         for file in self.fileList.get_children():
             self.fileList.delete(file)
 
-        self.folder.set(filedialog.askdirectory())
+        # Grab all the files from the folder
+        files = [f for f in listdir(self.folder.get()) if isfile(join(self.folder.get(), f))]
 
-        onlyfiles = [f for f in listdir(self.folder.get()) if isfile(join(self.folder.get(), f))]
-        for file in onlyfiles:
-            creation_date = datetime.fromtimestamp(getmtime(self.folder.get() + "/" + file))
-            self.fileList.insert("", 'end', text=file, values=(file, creation_date))
+        # Add all image files to the file list
+        for file in files:
+            fileExtension = splitext(file)[1].upper()
+            if fileExtension in IMAGE_EXTENSTIONS:
+                creationDate = datetime.fromtimestamp(getmtime(self.folder.get() + "/" + file))
+                self.fileList.insert("", 'end', text=file, values=(file, creationDate))
 
-    # TODO rework for funky TIFFs and raws
+    # Select every file in the file list
+    def selectAllFiles(self):
+        for file in self.fileList.get_children():
+            self.fileList.selection_add(file)
+
+    # Create a thumbnail of the first selected file if it's not alredy done
+    # This function is called when ever the selection of the file list changes
     def updateThumbnail(self, event):
-        selected_files = self.fileList.selection()
-        if selected_files:
-            image_path = self.fileList.item(selected_files[0])['values'][0]
-            self.thumbnailImage = Image.open(self.folder.get() + "/" + image_path)
-            self.thumbnailImage.thumbnail((400,400), Image.LANCZOS)
-            self.thumbnailImage = ImageTk.PhotoImage(self.thumbnailImage)
-            self.thumbnail.configure(image=self.thumbnailImage)
+        # Check that we didn't just de-select all files, then grab the path of the first selected
+        selectedFiles = self.fileList.selection()
+        if selectedFiles:
+            file = self.fileList.item(selectedFiles[0])['values'][0]
 
-    # Enable of disable the UI for manual date entry based on the corresponding checkbox
+            if file != self.loadedThumbnailFile:
+                self.loadedThumbnailFile = file
+                filePath = self.folder.get() + "/" + file
+
+                extension = splitext(file)[1]
+                if extension in RAW_EXTENSIONS:
+                    with rawpy.imread(filePath) as raw:
+                        rgb = raw.postprocess(use_camera_wb=True, half_size=True)
+                        self.image = Image.fromarray(rgb)
+                else:
+                    self.image = Image.open(filePath)
+
+                    # If it's a 16-bit grayscale tiff convert it to 8-bit
+                    if self.image.format == 'TIFF' and self.image.mode == 'I;16':
+                        array = np.array(self.image)
+                        self.image = Image.fromarray((array/256).astype(np.uint8))
+
+                self.thumbnailImage() 
+                self.image = ImageTk.PhotoImage(self.image)
+                self.thumbnail.configure(image=self.image)
+        else:
+            pass
+            # Load default image
+
+    # Resize the image file and pad with transparency to fit nicely in a square space
+    def thumbnailImage(self):
+        self.image.thumbnail((THUMBNAIL_SIZE, THUMBNAIL_SIZE), Image.LANCZOS)
+        background = Image.new('RGBA', (THUMBNAIL_SIZE, THUMBNAIL_SIZE), TRANSPARENT)
+        imagePosition = (int(math.ceil((THUMBNAIL_SIZE - self.image.size[0]) / 2)),
+                         int(math.ceil((THUMBNAIL_SIZE - self.image.size[1]) / 2)))
+        background.paste(self.image, imagePosition)
+        background.format = self.image.format
+        self.image = background.convert('RGBA')
+
+    # Enable or disable the UI for manual date entry
     def toggleAutoDate(self):
         if self.autoDating.get():
             for child in self.dateEntryFrame.winfo_children():
@@ -246,7 +299,7 @@ class PhotographRenamer:
             for child in self.appendixEntryFrame.winfo_children():
                 child.pack_forget()
 
-    def get_filename(self, sequence_counter):
+    def getFilename(self, sequenceCounter):
         filename = ""
         filenameState = self.checkFilenameEntries()
         if filenameState == FILENAME_VALID:
@@ -266,7 +319,7 @@ class PhotographRenamer:
                 numberPadding = 2
 
             # Add sequence number
-            filename += str(int(self.startNumber.get()) + sequence_counter).zfill(numberPadding)
+            filename += str(int(self.startNumber.get()) + sequenceCounter).zfill(numberPadding)
 
             # Add appendix if its enabled
             if self.appendixing.get():
@@ -278,16 +331,14 @@ class PhotographRenamer:
             filename += filenameState
         
         return filename
+    
+    # Update the preview filename with the first item selected in the list
+    def updatePreviewFilename(self):
+        self.previewFilename.set(self.getFilename(0))
+        self.previewFilenameLabel.after(5, self.updatePreviewFilename)
 
-    # TODO: Chomping and leading 0's
-    def updateCurrentFilename(self):
-        filename = self.get_filename(0)
-        self.currentFilenameLabel.configure(text=filename)
-        self.currentFilenameLabel.after(5, self.updateCurrentFilename)
-
-    def rename_files(self):
-        self.updateCurrentFilename()
-        print(self.currentFilenameLabel.cget("text"))
+    def renameFiles(self):
+        self.updatePreviewFilename()
 
     # Check the entered data for its validity, return error message if it's not
     def checkFilenameEntries(self):
@@ -316,8 +367,11 @@ class PhotographRenamer:
         else: 
             return FILENAME_VALID
 
-    def getFileYear(self):
-        return self.year.get().zfill(2)[-2:]
+    def getFileYear(self, selectionIndex):
+        if self.autoDating.get(): 
+            pass
+        else:
+            return self.year.get().zfill(2)[-2:]
 
     def getFileMonth(self):
         return str(self.month.current() + 1).zfill(2)
@@ -328,9 +382,6 @@ class PhotographRenamer:
     def getRollLetter(self):
         return self.rollLetter.get().upper()
 
-    def run(self):
-        self.window.mainloop()
-
 if __name__ == "__main__":
     application = PhotographRenamer()
-    application.run()
+    application.window.mainloop()
