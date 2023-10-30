@@ -11,11 +11,11 @@ import tkinter.filedialog as filedialog
 import rawpy
 import math
 from PIL import Image, ImageTk
-from os import listdir
+from os import listdir, rename
 from os.path import isfile, join, getmtime, splitext 
 from datetime import datetime
 
-FILENAME_VALID = "Valid"
+FILENAME_VALID = "Select a file"
 FILENAME_INVALID_YEAR = "Invalid year!"
 FILENAME_NO_MONTH = "Select a month!"
 FILENAME_INVALID_DAY = "Invalid day!"
@@ -52,11 +52,12 @@ class PhotographRenamer:
         # Treeview and scrollbar
         fileListFrame = ttk.Frame(selectFilesFrame)
 
-        self.fileList = ttk.Treeview(fileListFrame, columns=('filename', 'dateCreated'))
+        self.fileList = ttk.Treeview(fileListFrame, columns=('filename', 'displayDate', 'formattedDate'))
+        self.fileList['displaycolumns'] = ('filename', 'displayDate')
         self.fileList.config(selectmode='extended')
         self.fileList['show'] = 'headings'
         self.fileList.heading("filename", text="File name", anchor='w')
-        self.fileList.heading("dateCreated", text="Date created", anchor='w')
+        self.fileList.heading("displayDate", text="Date created/modified", anchor='w')
         self.fileList.bind('<<TreeviewSelect>>', self.updateThumbnail)
         self.fileList.pack(expand=True, fill='x', side='left')
 
@@ -86,21 +87,18 @@ class PhotographRenamer:
         # Auto date option
         self.autoDating = tk.BooleanVar()
         self.autoDating.set(True)
-        autoDatingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
-        autoDatingCheckbox.configure(text="Grab date from metadata", variable=self.autoDating, command=self.toggleAutoDate)
+        autoDatingCheckbox = ttk.Checkbutton(filenameOptionsFrame, text="Grab date from metadata", variable=self.autoDating, command=self.toggleAutoDate)
         autoDatingCheckbox.pack(side='left')
 
         # Roll letter option
         self.rollFilm = tk.BooleanVar()
         self.rollFilm.set(False)
-        rollFilmCheckbox = ttk.Checkbutton(filenameOptionsFrame)
-        rollFilmCheckbox.configure(text="Roll film", variable=self.rollFilm, command=self.togglRollFilm)
+        rollFilmCheckbox = ttk.Checkbutton(filenameOptionsFrame, text="Roll film", variable=self.rollFilm, command=self.toggleRollFilm)
         rollFilmCheckbox.pack(side='left')
 
         self.appendixing = tk.BooleanVar()
         self.appendixing.set(False)
-        appendixingCheckbox = ttk.Checkbutton(filenameOptionsFrame)
-        appendixingCheckbox.configure(text="Add appendix", variable=self.appendixing, command=self.toggleAppendix)
+        appendixingCheckbox = ttk.Checkbutton(filenameOptionsFrame, text="Add appendix", variable=self.appendixing, command=self.toggleAppendix)
         appendixingCheckbox.pack(side='left')
 
         filenameOptionsFrame.pack(fill='x', side='top')
@@ -128,7 +126,7 @@ class PhotographRenamer:
         self.day = tk.StringVar()
         dayEntryLabel = ttk.Label(self.dateEntryFrame, text="  Day: ")
         dayEntryLabel.pack(side='left')
-        dayEntry = ttk.Entry(self.dateEntryFrame, textvariable="", width=3)
+        dayEntry = ttk.Entry(self.dateEntryFrame, textvariable=self.day, width=3)
         dayEntry.pack(side='left')
 
         self.dateEntryFrame.pack(fill='x', side='left')
@@ -139,7 +137,7 @@ class PhotographRenamer:
         self.rollLetter = tk.StringVar()
         rollLetterEntryLabel = ttk.Label(self.rollLetterEntryFrame, text="Roll letter: ")
         rollLetterEntryLabel.pack(side='left')
-        rollLetterEntry = ttk.Entry(self.rollLetterEntryFrame, textvariable="", width=3)
+        rollLetterEntry = ttk.Entry(self.rollLetterEntryFrame, textvariable=self.rollLetter, width=3)
         rollLetterEntry.pack(side='left')
         self.rollLetterEmpty = ttk.Label(self.rollLetterEntryFrame, text="")
 
@@ -163,7 +161,7 @@ class PhotographRenamer:
         self.appendix = tk.StringVar()
         appendixEntryLabel = ttk.Label(self.appendixEntryFrame, text="Appendix:")
         appendixEntryLabel.pack(side='left')
-        self.appendixEntry = ttk.Entry(self.appendixEntryFrame, textvariable="" , width=10)
+        self.appendixEntry = ttk.Entry(self.appendixEntryFrame, textvariable=self.appendix , width=10)
         self.appendixEntry.pack(side='left')
 
         self.appendixEntryFrame.pack(fill='x', side='left')
@@ -174,7 +172,7 @@ class PhotographRenamer:
         # Image preview
         self.thumbnailFrame = ttk.LabelFrame(frame, width=410, height=425, text="Image preview")
 
-        self.image = Image.open("../test_images/cat.jpeg")
+        self.image = Image.open("cat.jpeg")
         self.thumbnailImage()
         self.image = ImageTk.PhotoImage(self.image)
         self.thumbnail = ttk.Label(self.thumbnailFrame, image=self.image)
@@ -187,15 +185,15 @@ class PhotographRenamer:
         # Current filename and rename button
         self.previewFilename = tk.StringVar()
         self.previewFilenameLabel = ttk.Label(frame, textvariable=self.previewFilename)
-        self.updatePreviewFilename()
 
         renameButton = ttk.Button(frame, text="Rename file(s)", command=self.renameFiles)
         renameButton.pack(side='bottom')
         self.previewFilenameLabel.pack(side='bottom')
 
         self.toggleAutoDate()
-        self.togglRollFilm()
+        self.toggleRollFilm()
         self.toggleAppendix()
+        self.updatePreviewFilename()
 
         frame.pack(expand=True, fill='both', side='top')
         window.resizable(False, False)
@@ -220,8 +218,10 @@ class PhotographRenamer:
         for file in files:
             fileExtension = splitext(file)[1].upper()
             if fileExtension in IMAGE_EXTENSTIONS:
-                creationDate = datetime.fromtimestamp(getmtime(self.folder.get() + "/" + file))
-                self.fileList.insert("", 'end', text=file, values=(file, creationDate))
+                date = datetime.fromtimestamp(getmtime(self.folder.get() + "/" + file))
+                formattedDate = date.strftime('%y%m%d')
+                displayDate = date.strftime('%b %d, %Y')
+                self.fileList.insert("", 'end', text=file, values=(file, displayDate, formattedDate))
 
     # Select every file in the file list
     def selectAllFiles(self):
@@ -230,6 +230,7 @@ class PhotographRenamer:
 
     # Create a thumbnail of the first selected file if it's not alredy done
     # This function is called when ever the selection of the file list changes
+    # TODO update this so it's cleaner with the new filename code
     def updateThumbnail(self, event):
         # Check that we didn't just de-select all files, then grab the path of the first selected
         selectedFiles = self.fileList.selection()
@@ -238,7 +239,7 @@ class PhotographRenamer:
 
             if file != self.loadedThumbnailFile:
                 self.loadedThumbnailFile = file
-                filePath = self.folder.get() + "/" + file
+                filePath = self.getFilePath(file)
 
                 extension = splitext(file)[1]
                 if extension in RAW_EXTENSIONS:
@@ -280,7 +281,7 @@ class PhotographRenamer:
                 child.configure(state='enable')
 
     # Enable or disable the UI for film roll letters
-    def togglRollFilm(self):
+    def toggleRollFilm(self):
         if self.rollFilm.get():
             for child in self.rollLetterEntryFrame.winfo_children():
                 child.pack(side='left')
@@ -299,15 +300,69 @@ class PhotographRenamer:
             for child in self.appendixEntryFrame.winfo_children():
                 child.pack_forget()
 
-    def getFilename(self, sequenceCounter):
+    # Check the entered data for its validity, return error message if it's not
+    def checkFilenameEntries(self):
+        error = ""
+        if not self.autoDating.get():
+            year = self.getFileYear()
+            if not(year.isnumeric() and int(year) > 0):
+                error += FILENAME_INVALID_YEAR + "\n"
+            
+            if int(self.getFileMonth()) == 0:
+                error += FILENAME_NO_MONTH + "\n"
+            
+            day = self.getFileDay() 
+            if not(day.isnumeric() and int(day) > 0 and int(day) <= 31): # TODO do a better check so the day actually exists
+                error += FILENAME_INVALID_DAY + "\n"
+            
+        if self.rollFilm.get() and not(self.getRollLetter().isalpha()):
+            error += FILENAME_INVALID_ROLL_LETTER + "\n"
+
+        if not(self.startNumber.get().isnumeric()):
+            error += FILENAME_INVALID_NUMBER + "\n"
+
+        appendix = self.getAppendix() 
+        if self.appendixing.get() and not(appendix.isalpha() and not appendix == ""):
+            error += FILENAME_INVALID_APPENDIX + "\n"
+
+        if error != "":
+            return error
+        else: 
+            return FILENAME_VALID
+
+    # Return a formatted version of the year entry box
+    def getFileYear(self):
+        return self.year.get().zfill(2)[-2:]
+
+    # Return a numerical version of the month dropdown
+    def getFileMonth(self):
+        return str(self.month.current() + 1).zfill(2)
+
+    # Return a formatted version of the day entry box
+    def getFileDay(self):
+        return self.day.get().zfill(2)
+    
+    # Return a formatted version of the roll letter entry box
+    def getRollLetter(self):
+        return self.rollLetter.get().upper()
+
+    # Return a formatted version of the appendix entry box 
+    def getAppendix(self):
+        return self.appendix.get().lower()
+    
+    def getFilePath(self, filename):
+        return self.folder.get() + "/" + filename
+
+    def updatePreviewFilename(self):
         filename = ""
         filenameState = self.checkFilenameEntries()
-        if filenameState == FILENAME_VALID:
+        if filenameState == FILENAME_VALID and self.fileList.selection():
+            firstFile = self.fileList.item(self.fileList.selection()[0])
             # Add date
             if not self.autoDating.get():
                 filename += self.getFileYear() + self.getFileMonth() + self.getFileDay()
             else:
-                filename += "YYMMDD" # TODO auto dating
+                filename += str(firstFile['values'][2])
 
             # Add dividier
             filename += DIVIDER
@@ -319,68 +374,72 @@ class PhotographRenamer:
                 numberPadding = 2
 
             # Add sequence number
-            filename += str(int(self.startNumber.get()) + sequenceCounter).zfill(numberPadding)
+            filename += str(int(self.startNumber.get())).zfill(numberPadding)
 
             # Add appendix if its enabled
             if self.appendixing.get():
-                filename += "_" + self.appendix.get()
+                filename += DIVIDER + self.getAppendix()
 
-            # TODO Add file extension
+            # Add file extension
+            filename += splitext(firstFile['values'][0])[1]
 
+            self.previewFilename.set(filename)
         else: 
-            filename += filenameState
-        
-        return filename
-    
-    # Update the preview filename with the first item selected in the list
-    def updatePreviewFilename(self):
-        self.previewFilename.set(self.getFilename(0))
-        self.previewFilenameLabel.after(5, self.updatePreviewFilename)
+            self.previewFilename.set(filenameState) 
+
+        self.previewFilenameLabel.after(20, self.updatePreviewFilename)
 
     def renameFiles(self):
-        self.updatePreviewFilename()
+        # Exit if we don't have the right data for proper file names
+        if self.checkFilenameEntries() != FILENAME_VALID:
+            return
 
-    # Check the entered data for its validity, return error message if it's not
-    def checkFilenameEntries(self):
-        error = ""
-        if not self.autoDating.get():
-            if not(self.year.get().isnumeric()): # TODO do a better check than this so your aren't in the future
-                error += FILENAME_INVALID_YEAR + "\n"
-            
-            if self.month.current() == -1:
-                error += FILENAME_NO_MONTH + "\n"
-            
-            if not(self.day.get().isnumeric()): # TODO do a better check so the day actually exists
-                error += FILENAME_INVALID_DAY + "\n"
-            
-        if self.rollFilm.get() and not(self.rollLetter.get().isalpha()):
-            error += FILENAME_INVALID_ROLL_LETTER + "\n"
-        
-        if not(self.startNumber.get().isnumeric()):
-            error += FILENAME_INVALID_NUMBER + "\n"
-        
-        if self.appendixing.get() and not(self.appendix.get().isalpha()):
-            error += FILENAME_INVALID_APPENDIX + "\n"
+        selectedFiles = self.fileList.selection()
+        dateCounters = {}
 
-        if error != "":
-            return error
-        else: 
-            return FILENAME_VALID
+        for file in selectedFiles:
+            file = self.fileList.item(file)
 
-    def getFileYear(self, selectionIndex):
-        if self.autoDating.get(): 
-            pass
-        else:
-            return self.year.get().zfill(2)[-2:]
+            filename = ""
 
-    def getFileMonth(self):
-        return str(self.month.current() + 1).zfill(2)
+            # Date
+            date = ""
+            if not self.autoDating.get():
+                date += self.getFileYear() + self.getFileMonth() + self.getFileDay()
+            else:
+                date += str(file['values'][2])
 
-    def getFileDay(self):
-        return self.day.get().zfill(2)
-    
-    def getRollLetter(self):
-        return self.rollLetter.get().upper()
+            if date not in dateCounters:
+                dateCounters[date] = 0
+
+            filename += date
+
+            # Divider
+            filename += DIVIDER
+
+            # Roll letter
+            numberPadding = 3
+            if self.rollFilm.get():
+                filename += self.getRollLetter()
+                numberPadding = 2
+
+            # Sequence number
+            filename += str(int(self.startNumber.get()) + dateCounters[date]).zfill(numberPadding)
+
+            # Appendix
+            if self.appendixing.get():
+                filename += DIVIDER + self.appendix.get()
+
+            # File extension 
+            filename += splitext(file['values'][0])[1]
+
+            # Increment the date sequence
+            dateCounters[date] += 1
+
+            # Rename the file
+            rename(self.getFilePath(file['values'][0]), self.getFilePath(filename))
+
+        self.loadFolder()
 
 if __name__ == "__main__":
     application = PhotographRenamer()
