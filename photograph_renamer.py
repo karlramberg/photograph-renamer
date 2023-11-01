@@ -8,9 +8,9 @@
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.filedialog as filedialog
-import numpy, rawpy, math
+import numpy, rawpy, math, base64
 from PIL import Image, ImageTk
-from os import listdir, rename
+import os
 from os.path import isfile, join, getmtime, splitext 
 from datetime import datetime
 
@@ -25,9 +25,10 @@ DIVIDER = "_"
 
 IMAGE_EXTENSTIONS = (".JPG", ".JPEG", ".TIF", ".TIFF", ".DNG", ".RAF", ".NEF", ".PNG")
 RAW_EXTENSIONS = (".RAF", ".NEF")
-TRANSPARENT = (0, 0, 0, 0)
 
+FAVICON_BASE64="iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAANiSURBVDhPVVNLbFtFFD0z75uXOnbAcZImdRIngQZXETSUtkKVsiASIgsoqwpVFYJNd0gsWSB2sEJs2LBBtEhIbGkR4VOlUn4LQHyc0ripm9hJnts4iT/v+fl9ZoZ5gBBc6Y40unPOzJl7LsF/QgiQ/ZXp+USvf5lo0XlK+DBlRPBIVEJHWXNr9FpmvvhNfPRvBPAvQfHrieHj/fr1tdut2aYT4PFcFy7MyTKnWF4IsV/yYWkKnjuT+v7+lnPlzNWyHeNovNz7YvxENs2WjWPR7K9FD6JLRT5vgoSyGHFMPmXCowJLhTYM03shO0iXbn+YHYyxRL6FNH6YvJXMBLNCagiEgTvVBCzdwfiQD2ISbJYMeE0LY2YDqsoguEB5RyzkX6+8qLzy6eT88FD0jhAc9ZqKR/RNvPdRDZ9ct/HShTwcdwCvXt3DPTuHqafn4Ng/o6ubgKqYmJtKLylvXep5N5Hk074vsLpxCjQ9j+zICE7PzIDpE3B5Hk+cPI2ZZ58B1wZQKJSQzdRBKcdBnYU0jMJzQSClMqDm+Pj9tw2Evg/D0LC38wiVbRvHLBOddhvr6/fR4ZHsFkEUAUzws2Tt4353NKdaiR4VD2wFny9m0QzSSHZzvPz8DphPcfPHYRw1BUy6h0vndzEyyFA/4LhTDA/Jd+9nmmNZmkhnVECjKFcjEMPEUFZBd08EFjK09jWUyxxBx8NIvwIu5T60Gf4ohUe03sB2oyoZywzEBUYzGrLpCKk+Bi2twkzpsAy5tzo40Se77gkcVBiaDzlabbKtVutitccQpyKfoe1wmL0Uux5DcJfIG5jUyjH4mAqNc+R6NQR1hkaL49CLEGOVfK77UNP5G8QQaEtXeIzA9RTpVRM7NpU919HXo8F3GXjc6g5kcuzUOTYq7G1lZb1dGT+unVU0TLqRkKwMhZKHxZ+amBpToKk+vlo8hBtyyP+HEzDsO8DdMrv52S3nAyW2Y8rQvm122Lyu0z5dVxDnYYthYdnFL8UQlkVwcrQLVI5G7UhK2/ILR0fJi0Xbaf9FsFkN2smU8WV1n0233GgiiggSloYuncBQCYYGDOnICNu7DJuV6EagpC7eWLVrMfZ/4xzHzJPds6YavmYZ6jlB2BiR88FBt3yfLTOY11bXWyv/HJUB/AkmcKji8cPSlQAAAABJRU5ErkJggg=="
 THUMBNAIL_SIZE = 400
+TRANSPARENT = (0, 0, 0, 0)
 PADX = 5
 PADY = 5
 
@@ -37,6 +38,16 @@ class photograph_renamer:
 		# Create main window and frame
 		window = tk.Tk()
 		frame = ttk.Frame(window)
+
+		# Favicon
+		window.iconphoto(True, tk.PhotoImage(data=FAVICON_BASE64))
+		# temporary_file = "favicon.ico"
+		# favicon_file = open(temporary_file, 'wb')
+		# favicon_file.write(base64.b64decode(FAVICON_BASE64))
+		# favicon_file.close()
+		# window.wm_iconbitmap(temporary_file)
+		# os.remove(temporary_file)
+		
 
 		# Choose folder -----------------------------------------------------------------------------------------------------------------------------
 		choose_folder_frame = ttk.LabelFrame(frame, text="Choose folder")
@@ -211,7 +222,7 @@ class photograph_renamer:
 			self.file_list.delete(file)
 
 		# Grab all the files from the folder
-		files = [f for f in listdir(self.folder.get()) if isfile(join(self.folder.get(), f))]
+		files = [f for f in os.listdir(self.folder.get()) if isfile(join(self.folder.get(), f))]
 
 		# Add all image files to the file list
 		for file in files:
@@ -410,7 +421,7 @@ class photograph_renamer:
 			date_counters[date] += 1
 
 			# Rename the file
-			rename(self.get_file_path(file['values'][0]), self.get_file_path(filename))
+			os.rename(self.get_file_path(file['values'][0]), self.get_file_path(filename))
 
 		self.load_folder()
 
