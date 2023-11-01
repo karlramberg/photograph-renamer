@@ -23,7 +23,6 @@ FILENAME_INVALID_NUMBER = "Invalid sequence number!"
 FILENAME_INVALID_APPENDIX = "Invalid appendix!"
 DIVIDER = "_"
 
-DEFAULT_IMAGE = "cat.jpeg"
 IMAGE_EXTENSTIONS = (".JPG", ".JPEG", ".TIF", ".TIFF", ".DNG", ".RAF", ".NEF", ".PNG")
 RAW_EXTENSIONS = (".RAF", ".NEF")
 TRANSPARENT = (0, 0, 0, 0)
@@ -174,12 +173,11 @@ class photograph_renamer:
 		# Image preview -----------------------------------------------------------------------------------------------------------------------------
 		thumbnail_frame = ttk.LabelFrame(frame, width=410, height=425, text="Image preview")
 
-		self.image = Image.open(DEFAULT_IMAGE)
-		self.thumbnail_image()
-		self.image = ImageTk.PhotoImage(self.image)
+		self.image = None
+		self.loaded_thumbnail_file = None
 		self.thumbnail = ttk.Label(thumbnail_frame, image=self.image)
+		self.load_blank_thumbnail()
 		self.thumbnail.pack(fill="both", anchor='center')
-		self.loaded_thumbnail_file = DEFAULT_IMAGE
 
 		thumbnail_frame.pack(fill='both', side='left')
 		thumbnail_frame.pack_propagate(False)
@@ -296,11 +294,14 @@ class photograph_renamer:
 				self.image = ImageTk.PhotoImage(self.image)
 				self.thumbnail.configure(image=self.image)
 
-		else: # if no files are selected load the default image
-			self.image = Image.open(DEFAULT_IMAGE)
-			self.thumbnail_image()
-			self.image = ImageTk.PhotoImage(self.image)
-			self.thumbnail.configure(image=self.image)
+		else: # if no files are selected load a blank thumbnail
+			self.load_blank_thumbnail()
+
+	def load_blank_thumbnail(self):
+		self.image = Image.new('RGBA', (THUMBNAIL_SIZE, THUMBNAIL_SIZE), TRANSPARENT)
+		self.image = ImageTk.PhotoImage(self.image)
+		self.thumbnail.configure(image=self.image)
+		self.loaded_thumbnail_file = ""
 
 	# Resize the image file and pad with transparency to fit nicely in a square space
 	def thumbnail_image(self):
