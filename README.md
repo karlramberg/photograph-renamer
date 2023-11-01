@@ -1,5 +1,3 @@
 # Photograph renamer
 
-WIP
-
-Simple tool to rename photographs for an archive. Uses the format YYMMDD_###.
+Simple tool to rename photographs for my archive
