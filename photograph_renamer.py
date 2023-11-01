@@ -1,9 +1,6 @@
 # TODO:
 # Thumbnail generation needs polish
-# Proper startup image
 # Do a proper check for a day existing in the month
-# Favicon
-# Build system
 
 import tkinter as tk
 import tkinter.ttk as ttk
