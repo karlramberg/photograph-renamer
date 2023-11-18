@@ -1,6 +1,6 @@
 # Photograph renamer
 
-Simple tool to rename photographs for my archive
+Small desktop application for renaming photographs in a consistent (gnostic) style
 
 ### Current features
 - Automatic dating, grabbed from file creation dates
