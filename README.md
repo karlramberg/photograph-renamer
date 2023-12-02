@@ -1,6 +1,6 @@
 # Photograph renamer
 
-Small desktop application for renaming photographs in a consistent (gnostic) style
+Small desktop application for renaming photographs in a consistent style
 
 ### Current features
 - Automatic dating, grabbed from file creation dates
